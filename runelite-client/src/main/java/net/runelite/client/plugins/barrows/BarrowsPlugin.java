@@ -24,6 +24,7 @@
  */
 package net.runelite.client.plugins.barrows;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
 import com.google.inject.Provides;
 import java.util.HashSet;
@@ -41,6 +42,7 @@ import net.runelite.api.ItemContainer;
 import net.runelite.api.NullObjectID;
 import net.runelite.api.ObjectID;
 import net.runelite.api.WallObject;
+import net.runelite.api.events.ConfigChanged;
 import net.runelite.api.events.GameObjectChanged;
 import net.runelite.api.events.GameObjectDespawned;
 import net.runelite.api.events.GameObjectSpawned;
@@ -59,9 +61,11 @@ import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.game.ItemManager;
+import net.runelite.client.game.SpriteManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.client.ui.overlay.infobox.InfoBoxManager;
 import net.runelite.client.util.StackFormatter;
 
 @PluginDescriptor(
@@ -82,12 +86,24 @@ public class BarrowsPlugin extends Plugin
 	);
 
 	private static final Set<Integer> BARROWS_LADDERS = Sets.newHashSet(NullObjectID.NULL_20675, NullObjectID.NULL_20676, NullObjectID.NULL_20677);
+	private static final ImmutableList<WidgetInfo> POSSIBLE_SOLUTIONS = ImmutableList.of(
+		WidgetInfo.BARROWS_PUZZLE_ANSWER1,
+		WidgetInfo.BARROWS_PUZZLE_ANSWER2,
+		WidgetInfo.BARROWS_PUZZLE_ANSWER3
+	);
+
+	private static final int CRYPT_REGION_ID = 14231;
 
 	@Getter(AccessLevel.PACKAGE)
 	private final Set<WallObject> walls = new HashSet<>();
 
 	@Getter(AccessLevel.PACKAGE)
 	private final Set<GameObject> ladders = new HashSet<>();
+
+	private boolean wasInCrypt = false;
+
+	@Getter
+	private Widget puzzleAnswer;
 
 	@Inject
 	private OverlayManager overlayManager;
@@ -103,6 +119,12 @@ public class BarrowsPlugin extends Plugin
 
 	@Inject
 	private ItemManager itemManager;
+
+	@Inject
+	private SpriteManager spriteManager;
+
+	@Inject
+	private InfoBoxManager infoBoxManager;
 
 	@Inject
 	private ChatMessageManager chatMessageManager;
@@ -130,6 +152,9 @@ public class BarrowsPlugin extends Plugin
 		overlayManager.remove(brotherOverlay);
 		walls.clear();
 		ladders.clear();
+		puzzleAnswer = null;
+		wasInCrypt = false;
+		stopPrayerDrainTimer();
 
 		// Restore widgets
 		final Widget potential = client.getWidget(WidgetInfo.BARROWS_POTENTIAL);
@@ -142,6 +167,15 @@ public class BarrowsPlugin extends Plugin
 		if (barrowsBrothers != null)
 		{
 			barrowsBrothers.setHidden(false);
+		}
+	}
+
+	@Subscribe
+	public void onConfigChanged(ConfigChanged event)
+	{
+		if (event.getGroup().equals("barrows") && !config.showPrayerDrainTimer())
+		{
+			stopPrayerDrainTimer();
 		}
 	}
 
@@ -210,9 +244,23 @@ public class BarrowsPlugin extends Plugin
 	{
 		if (event.getGameState() == GameState.LOADING)
 		{
+			wasInCrypt = isInCrypt();
 			// on region changes the tiles get set to null
 			walls.clear();
 			ladders.clear();
+			puzzleAnswer = null;
+		}
+		else if (event.getGameState() == GameState.LOGGED_IN)
+		{
+			boolean isInCrypt = isInCrypt();
+			if (wasInCrypt && !isInCrypt)
+			{
+				stopPrayerDrainTimer();
+			}
+			else if (!wasInCrypt && isInCrypt)
+			{
+				startPrayerDrainTimer();
+			}
 		}
 	}
 
@@ -239,9 +287,43 @@ public class BarrowsPlugin extends Plugin
 				.append(ChatColorType.NORMAL);
 
 			chatMessageManager.queue(QueuedMessage.builder()
-				.type(ChatMessageType.EXAMINE_ITEM)
+				.type(ChatMessageType.ITEM_EXAMINE)
 				.runeLiteFormattedMessage(message.build())
 				.build());
 		}
+		else if (event.getGroupId() == WidgetID.BARROWS_PUZZLE_GROUP_ID)
+		{
+			final int answer = client.getWidget(WidgetInfo.BARROWS_FIRST_PUZZLE).getModelId() - 3;
+			puzzleAnswer = null;
+
+			for (WidgetInfo puzzleNode : POSSIBLE_SOLUTIONS)
+			{
+				final Widget widgetToCheck = client.getWidget(puzzleNode);
+
+				if (widgetToCheck != null && widgetToCheck.getModelId() == answer)
+				{
+					puzzleAnswer = client.getWidget(puzzleNode);
+					break;
+				}
+			}
+		}
+	}
+
+	private void startPrayerDrainTimer()
+	{
+		if (config.showPrayerDrainTimer())
+		{
+			infoBoxManager.addInfoBox(new BarrowsPrayerDrainTimer(this, spriteManager));
+		}
+	}
+
+	private void stopPrayerDrainTimer()
+	{
+		infoBoxManager.removeIf(BarrowsPrayerDrainTimer.class::isInstance);
+	}
+
+	private boolean isInCrypt()
+	{
+		return client.getLocalPlayer().getWorldLocation().getRegionID() == CRYPT_REGION_ID;
 	}
 }
