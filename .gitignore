@@ -9,3 +9,5 @@ project.properties
 .settings/
 .classpath
 **/META-INF/*
+.vscode
+.factorypath
