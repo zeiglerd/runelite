@@ -96,4 +96,31 @@ public interface GpuPluginConfig extends Config
 	{
 		return 0;
 	}
+
+	@ConfigItem(
+		keyName = "useComputeShaders",
+		name = "Compute Shaders",
+		description = "Offloads face sorting to GPU, enabling extended draw distance. Requires plugin restart.",
+		warning = "This feature requires OpenGL 4.3 to use. Please check that your GPU supports this.\nRestart the plugin for changes to take effect.",
+		position = 6
+	)
+	default boolean useComputeShaders()
+	{
+		return true;
+	}
+
+	@Range(
+		min = 0,
+		max = 16
+	)
+	@ConfigItem(
+		keyName = "anisotropicFilteringLevel",
+		name = "Anisotropic Filtering",
+		description = "Configures the anisotropic filtering level.",
+		position = 7
+	)
+	default int anisotropicFilteringLevel()
+	{
+		return 0;
+	}
 }
