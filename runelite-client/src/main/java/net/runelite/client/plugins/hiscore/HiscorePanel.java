@@ -70,6 +70,8 @@ import net.runelite.http.api.hiscore.HiscoreSkill;
 import static net.runelite.http.api.hiscore.HiscoreSkill.*;
 import net.runelite.http.api.hiscore.HiscoreSkillType;
 import net.runelite.http.api.hiscore.Skill;
+import okhttp3.OkHttpClient;
+import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 
 @Slf4j
@@ -105,22 +107,23 @@ public class HiscorePanel extends PluginPanel
 		GIANT_MOLE, GROTESQUE_GUARDIANS, HESPORI,
 		KALPHITE_QUEEN, KING_BLACK_DRAGON, KRAKEN,
 		KREEARRA, KRIL_TSUTSAROTH, MIMIC,
-		OBOR, SARACHNIS, SCORPIA,
-		SKOTIZO, THE_GAUNTLET, THE_CORRUPTED_GAUNTLET,
-		THEATRE_OF_BLOOD, THERMONUCLEAR_SMOKE_DEVIL, TZKAL_ZUK,
-		TZTOK_JAD, VENENATIS, VETION,
-		VORKATH, WINTERTODT, ZALCANO,
-		ZULRAH
+		NIGHTMARE, OBOR, SARACHNIS,
+		SCORPIA, SKOTIZO, THE_GAUNTLET,
+		THE_CORRUPTED_GAUNTLET, THEATRE_OF_BLOOD, THERMONUCLEAR_SMOKE_DEVIL,
+		TZKAL_ZUK, TZTOK_JAD, VENENATIS,
+		VETION, VORKATH, WINTERTODT,
+		ZALCANO, ZULRAH
 	);
 
-	@Inject
-	ScheduledExecutorService executor;
+	private static final HiscoreEndpoint[] ENDPOINTS = new HiscoreEndpoint[] {
+		HiscoreEndpoint.NORMAL, HiscoreEndpoint.IRONMAN, HiscoreEndpoint.HARDCORE_IRONMAN, HiscoreEndpoint.ULTIMATE_IRONMAN, HiscoreEndpoint.DEADMAN, HiscoreEndpoint.TOURNAMENT
+	};
 
-	@Inject
-	@Nullable
-	private Client client;
-
+	private final ScheduledExecutorService executor;
+	private final Client client;
 	private final HiscoreConfig config;
+	private final NameAutocompleter nameAutocompleter;
+	private final HiscoreClient hiscoreClient;
 
 	private final IconTextField searchBar;
 
@@ -130,10 +133,6 @@ public class HiscorePanel extends PluginPanel
 	/* Container of all the selectable endpoints (ironman, deadman, etc) */
 	private final MaterialTabGroup tabGroup;
 
-	private final HiscoreClient hiscoreClient = new HiscoreClient();
-
-	private HiscoreResult result;
-
 	/* The currently selected endpoint */
 	private HiscoreEndpoint selectedEndPoint;
 
@@ -141,10 +140,14 @@ public class HiscorePanel extends PluginPanel
 	private boolean loading = false;
 
 	@Inject
-	public HiscorePanel(HiscoreConfig config)
+	public HiscorePanel(ScheduledExecutorService scheduledExecutorService, @Nullable Client client,
+		HiscoreConfig config, NameAutocompleter nameAutocompleter, OkHttpClient okHttpClient)
 	{
-		super();
+		this.executor = scheduledExecutorService;
+		this.client = client;
 		this.config = config;
+		this.nameAutocompleter = nameAutocompleter;
+		this.hiscoreClient = new HiscoreClient(okHttpClient);
 
 		// The layout seems to be ignoring the top margin and only gives it
 		// a 2-3 pixel margin, so I set the value to 18 to compensate
@@ -187,7 +190,7 @@ public class HiscorePanel extends PluginPanel
 
 				if (localPlayer != null)
 				{
-					executor.execute(() -> lookup(localPlayer.getName()));
+					lookup(localPlayer.getName());
 				}
 			}
 		});
@@ -198,7 +201,7 @@ public class HiscorePanel extends PluginPanel
 		tabGroup = new MaterialTabGroup();
 		tabGroup.setLayout(new GridLayout(1, 5, 7, 7));
 
-		for (HiscoreEndpoint endpoint : HiscoreEndpoint.values())
+		for (HiscoreEndpoint endpoint : ENDPOINTS)
 		{
 			final BufferedImage iconImage = ImageUtil.getResourceStreamFromClass(getClass(), endpoint.name().toLowerCase() + ".png");
 
@@ -295,6 +298,13 @@ public class HiscorePanel extends PluginPanel
 
 		add(bossPanel, c);
 		c.gridy++;
+
+		addInputKeyListener(nameAutocompleter);
+	}
+
+	void shutdown()
+	{
+		removeInputKeyListener(nameAutocompleter);
 	}
 
 	@Override
@@ -349,7 +359,7 @@ public class HiscorePanel extends PluginPanel
 	{
 		searchBar.setText(username);
 		resetEndpoints();
-		lookup();
+		executor.execute(this::lookup);
 	}
 
 	private void lookup()
@@ -391,6 +401,7 @@ public class HiscorePanel extends PluginPanel
 			selectedEndPoint = HiscoreEndpoint.NORMAL;
 		}
 
+		HiscoreResult result;
 		try
 		{
 			log.debug("Hiscore endpoint " + selectedEndPoint.name() + " selected");
@@ -417,6 +428,8 @@ public class HiscorePanel extends PluginPanel
 		searchBar.setIcon(IconTextField.Icon.SEARCH);
 		searchBar.setEditable(true);
 		loading = false;
+
+		nameAutocompleter.addToSearchHistory(result.getPlayer().toLowerCase());
 
 		for (Map.Entry<HiscoreSkill, JLabel> entry : skillLabels.entrySet())
 		{
@@ -670,7 +683,9 @@ public class HiscorePanel extends PluginPanel
 	private void resetEndpoints()
 	{
 		// Select the correct tab based on the world type.
-		tabGroup.select(tabGroup.getTab(selectWorldEndpoint().ordinal()));
+		HiscoreEndpoint endpoint = selectWorldEndpoint();
+		int idx = ArrayUtils.indexOf(ENDPOINTS, endpoint);
+		tabGroup.select(tabGroup.getTab(idx));
 	}
 
 	private HiscoreEndpoint selectWorldEndpoint()
@@ -679,7 +694,11 @@ public class HiscorePanel extends PluginPanel
 		{
 			EnumSet<WorldType> wTypes = client.getWorldType();
 
-			if (wTypes.contains(WorldType.DEADMAN))
+			if (wTypes.contains(WorldType.DEADMAN_TOURNAMENT))
+			{
+				return HiscoreEndpoint.TOURNAMENT;
+			}
+			else if (wTypes.contains(WorldType.DEADMAN))
 			{
 				return HiscoreEndpoint.DEADMAN;
 			}
