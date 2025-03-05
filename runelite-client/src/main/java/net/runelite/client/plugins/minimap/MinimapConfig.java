@@ -126,6 +126,17 @@ public interface MinimapConfig extends Config
 	Color clanChatColor();
 
 	@ConfigItem(
+		keyName = "showInWild",
+		name = "Show in Wilderness",
+		description = "Show hidden dots while in the Wild.",
+		section = minimapHideDotSection
+	)
+	default boolean showInWild()
+	{
+		return false;
+	}
+
+	@ConfigItem(
 		keyName = "hideItem",
 		name = "Hide item",
 		description = "Do not show items on the minimap",

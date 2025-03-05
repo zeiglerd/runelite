@@ -159,7 +159,20 @@ public class MinimapPlugin extends Plugin
 		}
 	}
 
-	private void replaceMapDots()
+	@Subscribe
+	public void onScriptPostFired(ScriptPostFired scriptPostFired)
+	{
+		if (scriptPostFired.getScriptId() == ScriptID.PVP_WIDGET_BUILDER && config.wildernessAttackLevelRange())
+		{
+			final Widget wildernessLevelWidget = client.getWidget(ComponentID.PVP_WILDERNESS_LEVEL);
+			boolean inWilderness = wildernessLevelWidget != null;
+			replaceMapDots(inWilderness);
+		}
+	}
+
+	private void replaceMapDots(boolean inWilderness)
+	{
+	private void replaceMapDots(boolean inWilderness = false)
 	{
 		SpritePixels[] mapDots = client.getMapDots();
 
@@ -168,68 +181,13 @@ public class MinimapPlugin extends Plugin
 			return;
 		}
 
-		if (config.hideItem())
-		{
-			hideDot(mapDots, DOT_ITEM);
-		}
-		else
-		{
-			applyDot(mapDots, DOT_ITEM, config.itemColor());
-		}
-
-		if (config.hideNpc())
-		{
-			hideDot(mapDots, DOT_NPC);
-		}
-		else
-		{
-			applyDot(mapDots, DOT_NPC, config.npcColor());
-		}
-
-		if (config.hidePlayer())
-		{
-			hideDot(mapDots, DOT_PLAYER);
-		}
-		else
-		{
-			applyDot(mapDots, DOT_PLAYER, config.playerColor());
-		}
-
-		if (config.hideFriend())
-		{
-			hideDot(mapDots, DOT_FRIEND);
-		}
-		else
-		{
-			applyDot(mapDots, DOT_FRIEND, config.friendColor());
-		}
-
-		if (config.hideTeam())
-		{
-			hideDot(mapDots, DOT_TEAM);
-		}
-		else
-		{
-			applyDot(mapDots, DOT_TEAM, config.teamColor());
-		}
-
-		if (config.hideFriendsChat())
-		{
-			hideDot(mapDots, DOT_FRIENDSCHAT);
-		}
-		else
-		{
-			applyDot(mapDots, DOT_FRIENDSCHAT, config.friendsChatColor());
-		}
-
-		if (config.hideClanChat())
-		{
-			hideDot(mapDots, DOT_CLAN);
-		}
-		else
-		{
-			applyDot(mapDots, DOT_CLAN, config.clanChatColor());
-		}
+		processDot(mapDots, DOT_ITEM, config.itemColor(), config.hideItem(), inWilderness);
+		processDot(mapDots, DOT_NPC, config.npcColor(), config.hideNpc(), inWilderness);
+		processDot(mapDots, DOT_PLAYER, config.playerColor(), config.hidePlayer(), inWilderness);
+		processDot(mapDots, DOT_FRIEND, config.friendColor(), config.hideFriend(), inWilderness);
+		processDot(mapDots, DOT_TEAM, config.teamColor(), config.hideTeam(), inWilderness);
+		processDot(mapDots, DOT_FRIENDSCHAT, config.friendsChatColor(), config.hideFriendsChat(), inWilderness);
+		processDot(mapDots, DOT_CLAN, config.clanChatColor(), config.hideClanChat(), inWilderness);
 	}
 
 	private void applyDot(SpritePixels[] mapDots, int id, Color color)
@@ -245,6 +203,19 @@ public class MinimapPlugin extends Plugin
 		if (id < mapDots.length)
 		{
 			mapDots[id] = null;
+		}
+	}
+
+	private void processDot(SpritePixels[] mapDots, int id, Color color, boolean hide, boolean inWilderness)
+	{
+		// true && (true && !true)
+		if (hide && (!inWilderness || !config.showInWild()))
+		{
+			hideDot(mapDots, id);
+		}
+		else
+		{
+			applyDot(mapDots, id, color);
 		}
 	}
 
